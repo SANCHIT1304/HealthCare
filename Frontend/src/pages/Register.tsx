@@ -6,7 +6,6 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Card from '../components/ui/Card';
 import axios from 'axios';
-// ...existing code...
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -31,12 +30,14 @@ const Register: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -45,33 +46,129 @@ const Register: React.FC = () => {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.firstName) newErrors.firstName = 'First name is required';
-    if (!formData.lastName) newErrors.lastName = 'Last name is required';
-    
-    if (!formData.email) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
+    // First Name validation
+    if (!formData.firstName.trim()) {
+      newErrors.firstName = 'First name is required';
+    } else if (formData.firstName.trim().length < 2) {
+      newErrors.firstName = 'First name must be at least 2 characters';
+    } else if (formData.firstName.trim().length > 50) {
+      newErrors.firstName = 'First name must be less than 50 characters';
+    } else if (!/^[a-zA-Z\s]+$/.test(formData.firstName.trim())) {
+      newErrors.firstName = 'First name can only contain letters and spaces';
     }
 
+    // Last Name validation
+    if (!formData.lastName.trim()) {
+      newErrors.lastName = 'Last name is required';
+    } else if (formData.lastName.trim().length < 2) {
+      newErrors.lastName = 'Last name must be at least 2 characters';
+    } else if (formData.lastName.trim().length > 50) {
+      newErrors.lastName = 'Last name must be less than 50 characters';
+    } else if (!/^[a-zA-Z\s]+$/.test(formData.lastName.trim())) {
+      newErrors.lastName = 'Last name can only contain letters and spaces';
+    }
+
+    // Email validation
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
+    } else if (formData.email.trim().length > 100) {
+      newErrors.email = 'Email must be less than 100 characters';
+    }
+
+    // Password validation
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters long';
+    } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/.test(formData.password)) {
+      newErrors.password = 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character';
     }
 
-    if (formData.password !== formData.confirmPassword) {
+    // Confirm Password validation
+    if (!formData.confirmPassword) {
+      newErrors.confirmPassword = 'Please confirm your password';
+    } else if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
 
+    // Phone validation
+    if (!formData.phone.trim()) {
+      newErrors.phone = 'Phone number is required';
+    } else if (!/^[\+]?[1-9][\d]{0,15}$/.test(formData.phone.trim())) {
+      newErrors.phone = 'Please enter a valid phone number';
+    }
+
+    // Date of Birth validation (for patients)
+    if (formData.role === 'patient' && formData.dateOfBirth) {
+      const birthDate = new Date(formData.dateOfBirth);
+      const today = new Date();
+      const age = today.getFullYear() - birthDate.getFullYear();
+      if (age < 0 || age > 120) {
+        newErrors.dateOfBirth = 'Please enter a valid date of birth';
+      }
+    }
+
+    // Doctor-specific validations
     if (formData.role === 'doctor') {
-      if (!formData.specialization) newErrors.specialization = 'Specialization is required';
-      if (!formData.location) newErrors.location = 'Location is required';
-      if (!formData.experience) newErrors.experience = 'Experience is required';
-      if (!formData.education) newErrors.education = 'Education details are required';
-      if (!formData.description) newErrors.description = 'Professional description is required';
-      if (!formData.consultationFee) newErrors.consultationFee = 'Consultation fee is required';
-      if (!formData.qualifications) newErrors.qualifications = 'Qualifications are required';
+      if (!formData.specialization.trim()) {
+        newErrors.specialization = 'Specialization is required';
+      } else if (formData.specialization.trim().length < 2) {
+        newErrors.specialization = 'Specialization must be at least 2 characters';
+      } else if (formData.specialization.trim().length > 100) {
+        newErrors.specialization = 'Specialization must be less than 100 characters';
+      }
+
+      if (!formData.location.trim()) {
+        newErrors.location = 'Location is required';
+      } else if (formData.location.trim().length < 5) {
+        newErrors.location = 'Location must be at least 5 characters';
+      } else if (formData.location.trim().length > 200) {
+        newErrors.location = 'Location must be less than 200 characters';
+      }
+
+      if (!formData.experience.trim()) {
+        newErrors.experience = 'Years of experience is required';
+      } else {
+        const exp = parseInt(formData.experience);
+        if (isNaN(exp) || exp < 0 || exp > 50) {
+          newErrors.experience = 'Experience must be between 0 and 50 years';
+        }
+      }
+
+      if (!formData.consultationFee.trim()) {
+        newErrors.consultationFee = 'Consultation fee is required';
+      } else {
+        const fee = parseFloat(formData.consultationFee);
+        if (isNaN(fee) || fee < 0 || fee > 10000) {
+          newErrors.consultationFee = 'Consultation fee must be between 0 and 10000';
+        }
+      }
+
+      if (!formData.education.trim()) {
+        newErrors.education = 'Education details are required';
+      } else if (formData.education.trim().length < 10) {
+        newErrors.education = 'Education must be at least 10 characters';
+      } else if (formData.education.trim().length > 500) {
+        newErrors.education = 'Education must be less than 500 characters';
+      }
+
+      if (!formData.qualifications.trim()) {
+        newErrors.qualifications = 'Qualifications are required';
+      } else if (formData.qualifications.trim().length < 10) {
+        newErrors.qualifications = 'Qualifications must be at least 10 characters';
+      } else if (formData.qualifications.trim().length > 300) {
+        newErrors.qualifications = 'Qualifications must be less than 300 characters';
+      }
+
+      if (!formData.description.trim()) {
+        newErrors.description = 'Professional description is required';
+      } else if (formData.description.trim().length < 20) {
+        newErrors.description = 'Professional description must be at least 20 characters';
+      } else if (formData.description.trim().length > 1000) {
+        newErrors.description = 'Professional description must be less than 1000 characters';
+      }
     }
 
     setErrors(newErrors);
@@ -82,17 +179,63 @@ const Register: React.FC = () => {
     e.preventDefault();
     if (!validateForm()) return;
 
+    setIsSubmitting(true);
     try {
-      // await register(formData);
-      const res = await axios.post('http://localhost:5000/api/auth/register', formData);
-      setErrors({});
+      // Prepare data based on role - only send relevant fields
+      const submitData = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
+        phone: formData.phone,
+        dateOfBirth: formData.dateOfBirth || undefined,
+      };
+
+      // Add doctor-specific fields only if role is doctor
       if (formData.role === 'doctor') {
-        navigate('/doctor/pending-verification');
-      } else {
-        navigate('/');
+        Object.assign(submitData, {
+          specialization: formData.specialization,
+          experience: formData.experience,
+          location: formData.location,
+          consultationFee: formData.consultationFee,
+          education: formData.education,
+          qualifications: formData.qualifications,
+          hospitalAffiliation: formData.hospitalAffiliation,
+          description: formData.description,
+        });
       }
-    } catch (error) {
+
+      const res = await axios.post('http://localhost:5000/api/auth/register', submitData);
+      
+      if (res.status === 201) {
+        setErrors({});
+        if (formData.role === 'doctor') {
+          navigate('/doctor/pending-verification');
+        } else {
+          navigate('/login', { 
+            state: { message: 'Registration successful! Please login to continue.' }
+          });
+        }
+      }
+    } catch (error: any) {
       console.error('Registration error:', error);
+      
+      if (error.response?.data?.errors) {
+        const serverErrors: Record<string, string> = {};
+        error.response.data.errors.forEach((err: any) => {
+          if (err.field === 'general') {
+            serverErrors.general = err.message;
+          } else {
+            serverErrors[err.field] = err.message;
+          }
+        });
+        setErrors(serverErrors);
+      } else {
+        setErrors({ general: 'Registration failed. Please try again.' });
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -123,6 +266,13 @@ const Register: React.FC = () => {
           </div>
 
           <Card className="p-8">
+            {/* General Error Display */}
+            {errors.general && (
+              <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
+                <p className="text-red-800 dark:text-red-300 text-sm">{errors.general}</p>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Role Selection */}
               <div>
@@ -244,6 +394,7 @@ const Register: React.FC = () => {
                     placeholder="Phone number"
                     value={formData.phone}
                     onChange={handleChange}
+                    error={errors.phone}
                     className="pl-10"
                   />
                 </div>
@@ -257,6 +408,7 @@ const Register: React.FC = () => {
                       placeholder="Date of birth"
                       value={formData.dateOfBirth}
                       onChange={handleChange}
+                      error={errors.dateOfBirth}
                       className="pl-10"
                     />
                   </div>
@@ -281,7 +433,7 @@ const Register: React.FC = () => {
                     />
                     <Input
                       name="location"
-                      placeholder="address"
+                      placeholder="Address"
                       value={formData.location}
                       onChange={handleChange}
                       error={errors.location}
@@ -379,8 +531,8 @@ const Register: React.FC = () => {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" size="lg">
-                {formData.role === 'doctor' ? 'Submit for Verification' : 'Create Account'}
+              <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+                {isSubmitting ? 'Creating Account...' : (formData.role === 'doctor' ? 'Submit for Verification' : 'Create Account')}
               </Button>
             </form>
 

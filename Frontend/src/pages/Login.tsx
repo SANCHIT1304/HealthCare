@@ -7,7 +7,6 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Card from '../components/ui/Card';
 import axios from 'axios';
-// import toast from 'react-hot-toast';
 
 const Login: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -16,16 +15,19 @@ const Login: React.FC = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = location.state?.from?.pathname || '/';
+  const message = location.state?.message;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -34,12 +36,16 @@ const Login: React.FC = () => {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.email) {
+    // Email validation
+    if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
+    } else if (formData.email.trim().length > 100) {
+      newErrors.email = 'Email must be less than 100 characters';
     }
 
+    // Password validation
     if (!formData.password) {
       newErrors.password = 'Password is required';
     }
@@ -52,29 +58,52 @@ const Login: React.FC = () => {
     e.preventDefault();
     if (!validateForm()) return;
 
+    setIsSubmitting(true);
     try {
-      // await login(formData.email, formData.password);
       const res = await axios.post('http://localhost:5000/api/auth/login', formData);
-      // login(res.data.user, res.data.token);
-      if(res.status === 200){
-        // const res_data = await res.data;
-        // login(res.data.user, res.data.token);
-        const user = await res.data.user;
-        login(user,res.data.token);
+      
+      if (res.status === 200) {
+        const user = res.data.user;
+        const token = res.data.token;
+        
+        // Login through auth context
+        login(user, token);
 
+        // Navigate based on user role and verification status
         if (user.role === 'doctor') {
-        if (!user.isVerified) {
-          navigate('/doctor/pending-verification', { replace: true });
+          if (!user.isVerified) {
+            navigate('/doctor/pending-verification', { replace: true });
+          } else {
+            navigate('/doctor/dashboard', { replace: true });
+          }
+        } else if (user.role === 'patient') {
+          navigate('/patient/dashboard', { replace: true });
+        } else if (user.role === 'admin') {
+          navigate('/admin/dashboard', { replace: true });
         } else {
-          navigate(from, { replace: true }); // or your main doctor page route
+          navigate(from, { replace: true });
         }
-      } else {
-        navigate(from, { replace: true });
       }
-      }
-    } catch (error) {
-      // Error is handled in the auth context
+    } catch (error: any) {
       console.error('Login error:', error);
+      
+      if (error.response?.data?.errors) {
+        const serverErrors: Record<string, string> = {};
+        error.response.data.errors.forEach((err: any) => {
+          if (err.field === 'general') {
+            serverErrors.general = err.message;
+          } else {
+            serverErrors[err.field] = err.message;
+          }
+        });
+        setErrors(serverErrors);
+      } else if (error.response?.status === 403) {
+        setErrors({ general: 'Your doctor account is pending verification. Please wait for admin approval.' });
+      } else {
+        setErrors({ general: 'Login failed. Please check your credentials and try again.' });
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -87,10 +116,51 @@ const Login: React.FC = () => {
 
   const handleDemoLogin = async (email: string) => {
     try {
-      await login(email, 'demo123');
-      navigate(from, { replace: true });
-    } catch (error) {
+      setIsSubmitting(true);
+      const res = await axios.post('http://localhost:5000/api/auth/login', {
+        email,
+        password: 'demo123'
+      });
+      
+      if (res.status === 200) {
+        const user = res.data.user;
+        const token = res.data.token;
+        
+        // Login through auth context
+        login(user, token);
+
+        // Navigate based on user role and verification status
+        if (user.role === 'doctor') {
+          if (!user.isVerified) {
+            navigate('/doctor/pending-verification', { replace: true });
+          } else {
+            navigate('/doctor/dashboard', { replace: true });
+          }
+        } else if (user.role === 'patient') {
+          navigate('/patient/dashboard', { replace: true });
+        } else if (user.role === 'admin') {
+          navigate('/admin/dashboard', { replace: true });
+        } else {
+          navigate(from, { replace: true });
+        }
+      }
+    } catch (error: any) {
       console.error('Demo login error:', error);
+      if (error.response?.data?.errors) {
+        const serverErrors: Record<string, string> = {};
+        error.response.data.errors.forEach((err: any) => {
+          if (err.field === 'general') {
+            serverErrors.general = err.message;
+          } else {
+            serverErrors[err.field] = err.message;
+          }
+        });
+        setErrors(serverErrors);
+      } else {
+        setErrors({ general: 'Demo login failed. Please try again.' });
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -121,6 +191,20 @@ const Login: React.FC = () => {
           </div>
 
           <Card className="p-8">
+            {/* Success/Info Message */}
+            {message && (
+              <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+                <p className="text-green-800 dark:text-green-300 text-sm">{message}</p>
+              </div>
+            )}
+
+            {/* General Error Display */}
+            {errors.general && (
+              <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
+                <p className="text-red-800 dark:text-red-300 text-sm">{errors.general}</p>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <div className="relative">
@@ -159,8 +243,8 @@ const Login: React.FC = () => {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full">
-                Sign In
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? 'Signing In...' : 'Sign In'}
               </Button>
             </form>
 
@@ -174,7 +258,7 @@ const Login: React.FC = () => {
                   <button
                     key={index}
                     onClick={() => handleDemoLogin(account.email)}
-                    // disabled={loading}
+                    disabled={isSubmitting}
                     className={`w-full p-3 rounded-lg text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 ${account.color}`}
                   >
                     Login as {account.role}

@@ -98,6 +98,35 @@ const Navbar: React.FC = () => {
                   </>
                 )}
 
+                {user.role === 'doctor' && (
+                  <>
+                    <Link
+                      to="/doctor/appointments"
+                      className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    >
+                      Appointments
+                    </Link>
+                    <Link
+                      to="/doctor/availability"
+                      className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    >
+                      Availability
+                    </Link>
+                    <Link
+                      to="/doctor/prescriptions"
+                      className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    >
+                      Prescriptions
+                    </Link>
+                    <Link
+                      to="/doctor/profile"
+                      className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    >
+                      Profile
+                    </Link>
+                  </>
+                )}
+
                 <button
                   onClick={toggleTheme}
                   className="p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -205,6 +234,39 @@ const Navbar: React.FC = () => {
                         className="block px-2 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                       >
                         Find Doctors
+                      </Link>
+                    </>
+                  )}
+
+                  {user.role === 'doctor' && (
+                    <>
+                      <Link
+                        to="/doctor/appointments"
+                        onClick={() => setIsMenuOpen(false)}
+                        className="block px-2 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      >
+                        Appointments
+                      </Link>
+                      <Link
+                        to="/doctor/availability"
+                        onClick={() => setIsMenuOpen(false)}
+                        className="block px-2 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      >
+                        Availability
+                      </Link>
+                      <Link
+                        to="/doctor/prescriptions"
+                        onClick={() => setIsMenuOpen(false)}
+                        className="block px-2 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      >
+                        Prescriptions
+                      </Link>
+                      <Link
+                        to="/doctor/profile"
+                        onClick={() => setIsMenuOpen(false)}
+                        className="block px-2 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      >
+                        Profile
                       </Link>
                     </>
                   )}

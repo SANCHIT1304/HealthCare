@@ -26,6 +26,7 @@ import DoctorDashboard from './pages/doctor/DoctorDashboard';
 import DoctorAppointments from './pages/doctor/DoctorAppointments';
 import DoctorAvailability from './pages/doctor/DoctorAvailability';
 import DoctorProfilePage from './pages/doctor/DoctorProfile';
+import DoctorPrescriptions from './pages/doctor/DoctorPrescriptions';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -125,6 +126,14 @@ function App() {
                 element={
                   <ProtectedRoute requiredRole="doctor">
                     <DoctorProfilePage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/doctor/prescriptions" 
+                element={
+                  <ProtectedRoute requiredRole="doctor">
+                    <DoctorPrescriptions />
                   </ProtectedRoute>
                 } 
               />

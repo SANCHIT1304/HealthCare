@@ -1,43 +1,69 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Search, 
-  MapPin, 
   Star, 
   Calendar,
-  Filter,
   Clock,
   DollarSign,
-  User
+  User,
+  Loader2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { mockDoctors } from '../../data/mockData';
+import { patientService } from '../../services/patientService';
+import { User as UserType } from '../../types/api';
+import toast from 'react-hot-toast';
 
 const Doctors: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSpecialization, setSelectedSpecialization] = useState('');
-  const [filteredDoctors, setFilteredDoctors] = useState(mockDoctors);
+  const [doctors, setDoctors] = useState<UserType[]>([]);
+  const [filteredDoctors, setFilteredDoctors] = useState<UserType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [specializations, setSpecializations] = useState<string[]>([]);
 
-  const specializations = Array.from(new Set(mockDoctors.map(doc => doc.specialization)));
+  // Fetch doctors on component mount
+  useEffect(() => {
+    fetchDoctors();
+  }, []);
 
-  React.useEffect(() => {
-    let filtered = mockDoctors.filter(doctor => {
+  const fetchDoctors = async () => {
+    try {
+      setLoading(true);
+      const response = await patientService.getVerifiedDoctors();
+      setDoctors(response.doctors);
+      setFilteredDoctors(response.doctors);
+      
+      // Extract unique specializations
+      const specs = Array.from(new Set(response.doctors.map(doc => doc.specialization).filter(Boolean)));
+      setSpecializations(specs as string[]); //changed from specs to specs as string[]
+    } catch (error) {
+      console.error('Error fetching doctors:', error);
+      toast.error('Failed to load doctors');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter doctors based on search and specialization
+  useEffect(() => {
+    let filtered = doctors.filter(doctor => {
       const matchesSearch = 
         doctor.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         doctor.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doctor.specialization.toLowerCase().includes(searchTerm.toLowerCase());
+        (doctor.specialization && doctor.specialization.toLowerCase().includes(searchTerm.toLowerCase()));
       
       const matchesSpecialization = 
         !selectedSpecialization || doctor.specialization === selectedSpecialization;
 
-      return matchesSearch && matchesSpecialization && doctor.isApproved;
+      return matchesSearch && matchesSpecialization;
     });
 
     setFilteredDoctors(filtered);
-  }, [searchTerm, selectedSpecialization]);
+  }, [searchTerm, selectedSpecialization, doctors]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
@@ -86,10 +112,16 @@ const Doctors: React.FC = () => {
         </div>
 
         {/* Results */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredDoctors.map((doctor, index) => (
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-600 dark:text-gray-400">Loading doctors...</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredDoctors.map((doctor, index) => (
             <motion.div
-              key={doctor.id}
+              key={doctor._id} // Changed from doctor.id to doctor._id
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
@@ -97,7 +129,7 @@ const Doctors: React.FC = () => {
               <Card hover className="p-6 h-full">
                 <div className="text-center mb-4">
                   <img
-                    src={doctor.avatar || `https://ui-avatars.com/api/?name=${doctor.firstName}+${doctor.lastName}&background=random`}
+                    src={doctor.profileImage || `https://ui-avatars.com/api/?name=${doctor.firstName}+${doctor.lastName}&background=random`}
                     alt={`${doctor.firstName} ${doctor.lastName}`}
                     className="w-20 h-20 rounded-full object-cover mx-auto mb-4"
                   />
@@ -105,24 +137,24 @@ const Doctors: React.FC = () => {
                     {doctor.firstName} {doctor.lastName}
                   </h3>
                   <p className="text-blue-600 dark:text-blue-400 font-medium">
-                    {doctor.specialization}
+                    {doctor.specialization || 'General Medicine'}
                   </p>
                 </div>
 
                 <div className="space-y-3 mb-6">
                   <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                     <Star className="w-4 h-4 mr-2 text-yellow-500" />
-                    <span>{doctor.rating} ({doctor.reviewsCount} reviews)</span>
+                    <span>4.8 (120 reviews)</span>
                   </div>
                   
                   <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                     <User className="w-4 h-4 mr-2" />
-                    <span>{doctor.experience} years experience</span>
+                    <span>{doctor.experience || 5} years experience</span>
                   </div>
 
                   <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                     <DollarSign className="w-4 h-4 mr-2" />
-                    <span>${doctor.consultationFee} consultation</span>
+                    <span>${doctor.consultationFee || 50} consultation</span>
                   </div>
 
                   <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
@@ -132,12 +164,12 @@ const Doctors: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Link to={`/patient/doctors/${doctor.id}`} className="block">
+                  <Link to={`/patient/doctors/${doctor._id}`} className="block">
                     <Button variant="outline" className="w-full">
                       View Profile
                     </Button>
                   </Link>
-                  <Link to={`/patient/book-appointment/${doctor.id}`} className="block">
+                  <Link to={`/patient/book-appointment/${doctor._id}`} className="block">
                     <Button className="w-full">
                       <Calendar className="w-4 h-4 mr-2" />
                       Book Appointment
@@ -148,8 +180,8 @@ const Doctors: React.FC = () => {
             </motion.div>
           ))}
         </div>
-
-        {filteredDoctors.length === 0 && (
+        )}
+        {!loading && filteredDoctors.length === 0 && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

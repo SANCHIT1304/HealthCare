@@ -23,6 +23,7 @@ interface AuthContextProps {
   isAuthenticated: boolean;
   login: (user: any, token: string) => void;
   logout: () => void;
+  updateUser: (user: any) => void;
 }
 
 // export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
@@ -136,6 +137,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.clear();
   };
 
+  const updateUser = (updatedUser: any) => {
+    setUser(updatedUser);
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+  };
+
   // const value: AuthContextType = {
   //   user,
   //   login,
@@ -152,7 +158,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 // };
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated: !!token, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated: !!token, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

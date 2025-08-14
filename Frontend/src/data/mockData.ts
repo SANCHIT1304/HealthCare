@@ -238,3 +238,143 @@ export const mockHealthRecords: HealthRecord[] = [
     unit: 'mg/dL'
   }
 ];
+
+export const mockPrescriptions = [
+  {
+    id: '1',
+    appointmentId: '3',
+    patientId: '1',
+    diagnosis: 'Hypertension',
+    symptoms: 'High blood pressure, occasional headaches',
+    medications: [
+      {
+        name: 'Lisinopril',
+        dosage: '10mg',
+        frequency: 'Once daily',
+        duration: '30 days',
+        instructions: 'Take in the morning with food',
+        quantity: 30,
+        unit: 'tablets'
+      },
+      {
+        name: 'Amlodipine',
+        dosage: '5mg',
+        frequency: 'Once daily',
+        duration: '30 days',
+        instructions: 'Take in the evening',
+        quantity: 30,
+        unit: 'tablets'
+      }
+    ],
+    notes: 'Monitor blood pressure weekly. Follow up in 4 weeks.',
+    followUpDate: '2024-04-15',
+    followUpRequired: true,
+    labTests: [
+      {
+        name: 'Complete Blood Count',
+        description: 'Routine blood work to monitor overall health',
+        urgency: 'routine'
+      },
+      {
+        name: 'Kidney Function Test',
+        description: 'Monitor kidney function due to medication',
+        urgency: 'routine'
+      }
+    ],
+    lifestyleRecommendations: [
+      {
+        category: 'diet',
+        recommendation: 'Reduce sodium intake to less than 2g per day'
+      },
+      {
+        category: 'exercise',
+        recommendation: '30 minutes of moderate exercise 5 days per week'
+      },
+      {
+        category: 'stress',
+        recommendation: 'Practice stress management techniques'
+      }
+    ],
+    allergies: ['Penicillin', 'Sulfa drugs'],
+    contraindications: ['Pregnancy', 'Severe kidney disease'],
+    status: 'active'
+  },
+  {
+    id: '2',
+    appointmentId: '5',
+    patientId: '1',
+    diagnosis: 'Eczema',
+    symptoms: 'Dry, itchy skin patches on arms and legs',
+    medications: [
+      {
+        name: 'Hydrocortisone Cream',
+        dosage: '1%',
+        frequency: 'Twice daily',
+        duration: '14 days',
+        instructions: 'Apply to affected areas after bathing',
+        quantity: 1,
+        unit: 'tube'
+      },
+      {
+        name: 'Cetirizine',
+        dosage: '10mg',
+        frequency: 'Once daily',
+        duration: '7 days',
+        instructions: 'Take at bedtime for itching relief',
+        quantity: 7,
+        unit: 'tablets'
+      }
+    ],
+    notes: 'Keep skin moisturized. Avoid hot showers and harsh soaps.',
+    followUpDate: '2024-04-20',
+    followUpRequired: true,
+    labTests: [],
+    lifestyleRecommendations: [
+      {
+        category: 'diet',
+        recommendation: 'Avoid known food allergens'
+      },
+      {
+        category: 'other',
+        recommendation: 'Use fragrance-free moisturizers'
+      }
+    ],
+    allergies: ['Latex'],
+    contraindications: [],
+    status: 'active'
+  },
+  {
+    id: '3',
+    appointmentId: '6',
+    patientId: '1',
+    diagnosis: 'Upper Respiratory Infection',
+    symptoms: 'Cough, sore throat, mild fever',
+    medications: [
+      {
+        name: 'Acetaminophen',
+        dosage: '500mg',
+        frequency: 'Every 6 hours as needed',
+        duration: '5 days',
+        instructions: 'Take for fever and pain relief',
+        quantity: 20,
+        unit: 'tablets'
+      }
+    ],
+    notes: 'Rest and stay hydrated. Symptoms should improve within 5-7 days.',
+    followUpRequired: false,
+    labTests: [],
+    lifestyleRecommendations: [
+      {
+        category: 'diet',
+        recommendation: 'Increase fluid intake'
+      },
+      {
+        category: 'sleep',
+        recommendation: 'Get adequate rest'
+      }
+    ],
+    allergies: [],
+    contraindications: [],
+    status: 'completed'
+  }
+];

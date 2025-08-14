@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
@@ -9,14 +9,16 @@ import {
   DollarSign, 
   ArrowLeft,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import { format, addDays, isSameDay, isAfter, startOfDay } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { mockDoctors } from '../../data/mockData';
+import { patientService } from '../../services/patientService';
+import { User as UserType } from '../../types/api';
 import toast from 'react-hot-toast';
 
 const BookAppointment: React.FC = () => {
@@ -24,12 +26,63 @@ const BookAppointment: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   
-  const doctor = mockDoctors.find(d => d.id === doctorId);
-  
+  const [doctor, setDoctor] = useState<UserType | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
+  const [doctorLoading, setDoctorLoading] = useState(true);
+  const [availableSlots, setAvailableSlots] = useState<Array<{start: string, end: string}>>([]);
+
+  // Fetch doctor data on component mount
+  useEffect(() => {
+    if (doctorId) {
+      fetchDoctor();
+    }
+  }, [doctorId]);
+
+  const fetchDoctor = async () => {
+    try {
+      setDoctorLoading(true);
+      const doctorData = await patientService.getDoctorProfile(doctorId!);
+      setDoctor(doctorData);
+    } catch (error) {
+      console.error('Error fetching doctor:', error);
+      toast.error('Failed to load doctor information');
+    } finally {
+      setDoctorLoading(false);
+    }
+  };
+
+  // Fetch availability when date is selected
+  useEffect(() => {
+    if (selectedDate && doctorId) {
+      fetchAvailability();
+    }
+  }, [selectedDate, doctorId]);
+
+  const fetchAvailability = async () => {
+    try {
+      const dateString = format(selectedDate!, 'yyyy-MM-dd');
+      const availability = await patientService.getDoctorAvailability(doctorId!, dateString);
+      setAvailableSlots(availability.availableSlots);
+    } catch (error) {
+      console.error('Error fetching availability:', error);
+      toast.error('Failed to load availability');
+      setAvailableSlots([]);
+    }
+  };
+
+  if (doctorLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">Loading doctor information...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!doctor) {
     return (
@@ -58,24 +111,7 @@ const BookAppointment: React.FC = () => {
 
   // Get available time slots for selected date
   const getAvailableTimeSlots = (date: Date) => {
-    const dayName = format(date, 'EEEE').toLowerCase();
-    const dayAvailability = doctor.availability[dayName] || [];
-    
-    const timeSlots: string[] = [];
-    dayAvailability.forEach(slot => {
-      const startHour = parseInt(slot.start.split(':')[0]);
-      const startMinute = parseInt(slot.start.split(':')[1]);
-      const endHour = parseInt(slot.end.split(':')[0]);
-      
-      for (let hour = startHour; hour < endHour; hour++) {
-        timeSlots.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
-        if (startMinute === 0) {
-          timeSlots.push(`${hour.toString().padStart(2, '0')}:30`);
-        }
-      }
-    });
-    
-    return timeSlots;
+    return availableSlots.map(slot => slot.start);
   };
 
   const handleBookAppointment = async () => {
@@ -86,12 +122,18 @@ const BookAppointment: React.FC = () => {
 
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const dateString = format(selectedDate, 'yyyy-MM-dd');
+      await patientService.bookAppointment({
+        doctorId: doctorId!,
+        date: dateString,
+        time: selectedTime,
+        reason
+      });
       
       toast.success('Appointment booked successfully!');
       navigate('/patient/appointments');
     } catch (error) {
+      console.error('Error booking appointment:', error);
       toast.error('Failed to book appointment. Please try again.');
     } finally {
       setLoading(false);
@@ -134,7 +176,7 @@ const BookAppointment: React.FC = () => {
               <Card className="p-6 sticky top-6">
                 <div className="text-center mb-6">
                   <img
-                    src={doctor.avatar || `https://ui-avatars.com/api/?name=${doctor.firstName}+${doctor.lastName}&background=random`}
+                    src={doctor.profileImage || `https://ui-avatars.com/api/?name=${doctor.firstName}+${doctor.lastName}&background=random`}
                     alt={`${doctor.firstName} ${doctor.lastName}`}
                     className="w-24 h-24 rounded-full object-cover mx-auto mb-4"
                   />
@@ -142,7 +184,7 @@ const BookAppointment: React.FC = () => {
                     {doctor.firstName} {doctor.lastName}
                   </h3>
                   <p className="text-blue-600 dark:text-blue-400 font-medium">
-                    {doctor.specialization}
+                    {doctor.specialization || 'General Medicine'}
                   </p>
                 </div>
 
@@ -150,7 +192,7 @@ const BookAppointment: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-gray-600 dark:text-gray-400">Experience</span>
                     <span className="font-medium text-gray-900 dark:text-white">
-                      {doctor.experience} years
+                      {doctor.experience || 5} years
                     </span>
                   </div>
                   
@@ -159,7 +201,7 @@ const BookAppointment: React.FC = () => {
                     <div className="flex items-center">
                       <Star className="w-4 h-4 text-yellow-500 mr-1" />
                       <span className="font-medium text-gray-900 dark:text-white">
-                        {doctor.rating}
+                        4.8
                       </span>
                     </div>
                   </div>
@@ -169,14 +211,14 @@ const BookAppointment: React.FC = () => {
                     <div className="flex items-center">
                       <DollarSign className="w-4 h-4 text-green-500 mr-1" />
                       <span className="font-medium text-gray-900 dark:text-white">
-                        ${doctor.consultationFee}
+                        ${doctor.consultationFee || 50}
                       </span>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                  <Link to={`/patient/doctors/${doctor.id}`}>
+                  <Link to={`/patient/doctors/${doctor._id}`}>
                     <Button variant="outline" className="w-full">
                       <User className="w-4 h-4 mr-2" />
                       View Full Profile
@@ -203,20 +245,15 @@ const BookAppointment: React.FC = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
                   {availableDates.map((date, index) => {
                     const isSelected = selectedDate && isSameDay(date, selectedDate);
-                    const dayName = format(date, 'EEEE').toLowerCase();
-                    const hasAvailability = doctor.availability[dayName]?.length > 0;
                     
                     return (
                       <button
                         key={index}
-                        onClick={() => hasAvailability ? setSelectedDate(date) : null}
-                        disabled={!hasAvailability}
+                        onClick={() => setSelectedDate(date)}
                         className={`p-3 rounded-lg text-center transition-all ${
                           isSelected
                             ? 'bg-blue-600 text-white shadow-lg'
-                            : hasAvailability
-                            ? 'bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-blue-300 hover:shadow-md'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                            : 'bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-blue-300 hover:shadow-md'
                         }`}
                       >
                         <div className="text-xs font-medium">
@@ -261,7 +298,7 @@ const BookAppointment: React.FC = () => {
                     <div className="text-center py-8">
                       <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                       <p className="text-gray-600 dark:text-gray-400">
-                        No available time slots for this date
+                        {selectedDate ? 'No available time slots for this date' : 'Please select a date first'}
                       </p>
                     </div>
                   )}
@@ -311,7 +348,7 @@ const BookAppointment: React.FC = () => {
                     <div className="flex justify-between">
                       <span className="text-gray-600 dark:text-gray-400">Consultation Fee:</span>
                       <span className="font-medium text-gray-900 dark:text-white">
-                        ${doctor.consultationFee}
+                        ${doctor.consultationFee || 50}
                       </span>
                     </div>
                   </div>

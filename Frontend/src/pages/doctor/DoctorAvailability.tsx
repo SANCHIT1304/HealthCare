@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Calendar, 
@@ -7,40 +7,22 @@ import {
   Trash2, 
   Save,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  Loader
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { mockDoctors } from '../../data/mockData';
+import { doctorService } from '../../services/doctorService';
+import { Availability, TimeSlot, WeeklySchedule } from '../../types/api';
 import toast from 'react-hot-toast';
-
-interface TimeSlot {
-  start: string;
-  end: string;
-}
-
-interface WeeklyAvailability {
-  [key: string]: TimeSlot[];
-}
 
 const DoctorAvailability: React.FC = () => {
   const { user } = useAuth();
-  const doctorData = mockDoctors.find(doc => doc.id === user?.id);
-  
-  const [availability, setAvailability] = useState<WeeklyAvailability>(
-    doctorData?.availability || {
-      monday: [],
-      tuesday: [],
-      wednesday: [],
-      thursday: [],
-      friday: [],
-      saturday: [],
-      sunday: []
-    }
-  );
-  
-  const [loading, setLoading] = useState(false);
+  const [availability, setAvailability] = useState<Availability | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const daysOfWeek = [
     { key: 'monday', label: 'Monday' },
@@ -60,31 +42,77 @@ const DoctorAvailability: React.FC = () => {
     ];
   }).flat();
 
-  const addTimeSlot = (day: string) => {
-    setAvailability(prev => ({
-      ...prev,
-      [day]: [...prev[day], { start: '09:00', end: '17:00' }]
-    }));
+  // Fetch availability
+  const fetchAvailability = async () => {
+    try {
+      setLoading(true);
+      const data = await doctorService.getAvailability();
+      setAvailability(data);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching availability:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load availability');
+      toast.error('Failed to load availability');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const removeTimeSlot = (day: string, index: number) => {
-    setAvailability(prev => ({
-      ...prev,
-      [day]: prev[day].filter((_, i) => i !== index)
-    }));
+  useEffect(() => {
+    fetchAvailability();
+  }, []);
+
+  const addTimeSlot = (day: keyof WeeklySchedule) => {
+    if (!availability) return;
+    
+    setAvailability(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        weeklySchedule: {
+          ...prev.weeklySchedule,
+          [day]: [...prev.weeklySchedule[day], { start: '09:00', end: '17:00' }]
+        }
+      };
+    });
   };
 
-  const updateTimeSlot = (day: string, index: number, field: 'start' | 'end', value: string) => {
-    setAvailability(prev => ({
-      ...prev,
-      [day]: prev[day].map((slot, i) => 
-        i === index ? { ...slot, [field]: value } : slot
-      )
-    }));
+  const removeTimeSlot = (day: keyof WeeklySchedule, index: number) => {
+    if (!availability) return;
+    
+    setAvailability(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        weeklySchedule: {
+          ...prev.weeklySchedule,
+          [day]: prev.weeklySchedule[day].filter((_, i) => i !== index)
+        }
+      };
+    });
+  };
+
+  const updateTimeSlot = (day: keyof WeeklySchedule, index: number, field: 'start' | 'end', value: string) => {
+    if (!availability) return;
+    
+    setAvailability(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        weeklySchedule: {
+          ...prev.weeklySchedule,
+          [day]: prev.weeklySchedule[day].map((slot, i) => 
+            i === index ? { ...slot, [field]: value } : slot
+          )
+        }
+      };
+    });
   };
 
   const validateTimeSlots = () => {
-    for (const [day, slots] of Object.entries(availability)) {
+    if (!availability) return false;
+    
+    for (const [day, slots] of Object.entries(availability.weeklySchedule)) {
       for (const slot of slots) {
         if (slot.start >= slot.end) {
           toast.error(`Invalid time slot on ${day}: Start time must be before end time`);
@@ -101,7 +129,7 @@ const DoctorAvailability: React.FC = () => {
             (slot1.start < slot2.end && slot1.end > slot2.start) ||
             (slot2.start < slot1.end && slot2.end > slot1.start)
           ) {
-            toast.error(`Overlapping time slots detected on ${day}`);
+            toast.error(`Overlapping time slots on ${day}`);
             return false;
           }
         }
@@ -111,60 +139,129 @@ const DoctorAvailability: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!validateTimeSlots()) return;
+    if (!availability) return;
+    
+    if (!validateTimeSlots()) {
+      return;
+    }
 
-    setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      toast.success('Availability updated successfully!');
-    } catch (error) {
+      setSaving(true);
+      await doctorService.updateAvailability(availability);
+      toast.success('Availability updated successfully');
+    } catch (err) {
+      console.error('Error updating availability:', err);
       toast.error('Failed to update availability');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const copyFromPreviousDay = (currentDay: string) => {
-    const dayIndex = daysOfWeek.findIndex(d => d.key === currentDay);
-    if (dayIndex > 0) {
-      const previousDay = daysOfWeek[dayIndex - 1].key;
-      setAvailability(prev => ({
+  const copyFromPreviousDay = (currentDay: keyof WeeklySchedule) => {
+    if (!availability) return;
+    
+    const dayIndex = daysOfWeek.findIndex(day => day.key === currentDay);
+    if (dayIndex === 0) return; // Can't copy from previous day if it's Monday
+    
+    const previousDay = daysOfWeek[dayIndex - 1].key as keyof WeeklySchedule;
+    const previousSlots = availability.weeklySchedule[previousDay];
+    
+    setAvailability(prev => {
+      if (!prev) return prev;
+      return {
         ...prev,
-        [currentDay]: [...prev[previousDay]]
-      }));
-    }
+        weeklySchedule: {
+          ...prev.weeklySchedule,
+          [currentDay]: [...previousSlots]
+        }
+      };
+    });
+    
+    toast.success(`Copied schedule from ${daysOfWeek[dayIndex - 1].label}`);
   };
 
-  const clearDay = (day: string) => {
-    setAvailability(prev => ({
-      ...prev,
-      [day]: []
-    }));
+  const clearDay = (day: keyof WeeklySchedule) => {
+    if (!availability) return;
+    
+    setAvailability(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        weeklySchedule: {
+          ...prev.weeklySchedule,
+          [day]: []
+        }
+      };
+    });
   };
 
-  const setCommonHours = (day: string) => {
-    setAvailability(prev => ({
-      ...prev,
-      [day]: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '17:00' }]
-    }));
+  const setCommonHours = (day: keyof WeeklySchedule) => {
+    if (!availability) return;
+    
+    setAvailability(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        weeklySchedule: {
+          ...prev.weeklySchedule,
+          [day]: [{ start: '09:00', end: '17:00' }]
+        }
+      };
+    });
   };
 
   const getTotalHours = () => {
+    if (!availability) return 0;
+    
     let total = 0;
-    Object.values(availability).forEach(slots => {
-      slots.forEach(slot => {
+    for (const slots of Object.values(availability.weeklySchedule)) {
+      for (const slot of slots) {
         const start = new Date(`2000-01-01 ${slot.start}`);
         const end = new Date(`2000-01-01 ${slot.end}`);
         total += (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-      });
-    });
+      }
+    }
     return total;
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center">
+            <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Error Loading Availability
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+            <Button onClick={() => fetchAvailability()}>
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!availability) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <motion.h1
@@ -172,186 +269,207 @@ const DoctorAvailability: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             className="text-3xl font-bold text-gray-900 dark:text-white mb-2"
           >
-            Manage Availability
+            Set Availability
           </motion.h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Set your weekly schedule for patient appointments
+            Manage your weekly schedule and appointment time slots
           </p>
         </div>
 
-        {/* Summary Card */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-8"
-        >
-          <Card className="p-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Weekly Schedule Summary
-                </h3>
-                <div className="flex items-center space-x-6 text-sm text-gray-600 dark:text-gray-400">
-                  <div className="flex items-center">
-                    <Clock className="w-4 h-4 mr-1" />
-                    <span>Total Hours: {getTotalHours().toFixed(1)} hrs/week</span>
-                  </div>
-                  <div className="flex items-center">
-                    <Calendar className="w-4 h-4 mr-1" />
-                    <span>
-                      Active Days: {Object.values(availability).filter(slots => slots.length > 0).length}/7
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4 md:mt-0">
-                <Button onClick={handleSave} loading={loading} size="lg">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Availability
-                </Button>
-              </div>
+        {/* Settings */}
+        <Card className="p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+            General Settings
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Appointment Duration (minutes)
+              </label>
+              <input
+                type="number"
+                value={availability.appointmentDuration || 30}
+                onChange={(e) => setAvailability(prev => prev ? {
+                  ...prev,
+                  appointmentDuration: parseInt(e.target.value) || 30
+                } : null)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min="15"
+                max="120"
+                step="15"
+              />
             </div>
-          </Card>
-        </motion.div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Buffer Time (minutes)
+              </label>
+              <input
+                type="number"
+                value={availability.bufferTime || 0}
+                onChange={(e) => setAvailability(prev => prev ? {
+                  ...prev,
+                  bufferTime: parseInt(e.target.value) || 0
+                } : null)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min="0"
+                max="60"
+                step="5"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Max Appointments per Day
+              </label>
+              <input
+                type="number"
+                value={availability.maxAppointmentsPerDay || 20}
+                onChange={(e) => setAvailability(prev => prev ? {
+                  ...prev,
+                  maxAppointmentsPerDay: parseInt(e.target.value) || 20
+                } : null)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min="1"
+                max="50"
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={availability.isActive}
+                onChange={(e) => setAvailability(prev => prev ? {
+                  ...prev,
+                  isActive: e.target.checked
+                } : null)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                Active (Accepting appointments)
+              </span>
+            </label>
+          </div>
+        </Card>
 
-        {/* Availability Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {daysOfWeek.map((day, dayIndex) => (
-            <motion.div
-              key={day.key}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 + dayIndex * 0.1 }}
-            >
-              <Card className="p-6">
+        {/* Weekly Schedule */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Weekly Schedule
+            </h2>
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                Total Hours: {getTotalHours().toFixed(1)}h
+              </span>
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center"
+              >
+                {saving ? (
+                  <Loader className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {saving ? 'Saving...' : 'Save Schedule'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {daysOfWeek.map((day) => (
+              <motion.div
+                key={day.key}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+              >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                     {day.label}
                   </h3>
                   <div className="flex items-center space-x-2">
-                    {availability[day.key].length === 0 ? (
-                      <span className="text-sm text-gray-500 dark:text-gray-400">Not available</span>
-                    ) : (
-                      <span className="text-sm text-green-600 dark:text-green-400">
-                        {availability[day.key].length} slot{availability[day.key].length !== 1 ? 's' : ''}
-                      </span>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyFromPreviousDay(day.key as keyof WeeklySchedule)}
+                    >
+                      Copy Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCommonHours(day.key as keyof WeeklySchedule)}
+                    >
+                      Set 9-5
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => clearDay(day.key as keyof WeeklySchedule)}
+                    >
+                      Clear
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => addTimeSlot(day.key as keyof WeeklySchedule)}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Slot
+                    </Button>
                   </div>
                 </div>
 
-                {/* Time Slots */}
-                <div className="space-y-3 mb-4">
-                  {availability[day.key].map((slot, slotIndex) => (
-                    <div key={slotIndex} className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <select
-                        value={slot.start}
-                        onChange={(e) => updateTimeSlot(day.key, slotIndex, 'start', e.target.value)}
-                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-600 dark:text-white text-sm"
-                      >
-                        {timeOptions.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      
-                      <span className="text-gray-500 dark:text-gray-400">to</span>
-                      
-                      <select
-                        value={slot.end}
-                        onChange={(e) => updateTimeSlot(day.key, slotIndex, 'end', e.target.value)}
-                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-600 dark:text-white text-sm"
-                      >
-                        {timeOptions.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeTimeSlot(day.key, slotIndex)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => addTimeSlot(day.key)}
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Slot
-                  </Button>
-                  
-                  {dayIndex > 0 && availability[daysOfWeek[dayIndex - 1].key].length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyFromPreviousDay(day.key)}
-                    >
-                      Copy from {daysOfWeek[dayIndex - 1].label}
-                    </Button>
-                  )}
-                  
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setCommonHours(day.key)}
-                  >
-                    Set Common Hours
-                  </Button>
-                  
-                  {availability[day.key].length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => clearDay(day.key)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      Clear Day
-                    </Button>
-                  )}
-                </div>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Tips Card */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.9 }}
-          className="mt-8"
-        >
-          <Card className="p-6">
-            <div className="flex items-start space-x-3">
-              <AlertCircle className="w-6 h-6 text-blue-600 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">
-                  Availability Tips
-                </h3>
-                <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                  <li>• Set realistic time slots that allow for proper patient consultation</li>
-                  <li>• Consider buffer time between appointments for notes and preparation</li>
-                  <li>• Update your availability regularly to reflect any schedule changes</li>
-                  <li>• Patients can only book appointments during your available time slots</li>
-                  <li>• Use "Common Hours" for typical 9-12 AM and 2-5 PM schedule</li>
-                </ul>
-              </div>
-            </div>
-          </Card>
-        </motion.div>
+                {availability.weeklySchedule[day.key as keyof WeeklySchedule].length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <Clock className="w-8 h-8 mx-auto mb-2" />
+                    <p>No time slots set for {day.label}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {availability.weeklySchedule[day.key as keyof WeeklySchedule].map((slot, index) => (
+                      <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <select
+                            value={slot.start}
+                            onChange={(e) => updateTimeSlot(day.key as keyof WeeklySchedule, index, 'start', e.target.value)}
+                            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            {timeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-gray-500 dark:text-gray-400">to</span>
+                          <select
+                            value={slot.end}
+                            onChange={(e) => updateTimeSlot(day.key as keyof WeeklySchedule, index, 'end', e.target.value)}
+                            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            {timeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeTimeSlot(day.key as keyof WeeklySchedule, index)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        </Card>
       </div>
     </div>
   );

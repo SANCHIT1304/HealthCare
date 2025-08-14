@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Calendar, 
@@ -19,7 +19,8 @@ import {
   Trash2,
   MessageCircle,
   Video,
-  FileText
+  FileText,
+  Loader2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format, isAfter, isBefore, isToday, isTomorrow, parseISO, addDays } from 'date-fns';
@@ -28,53 +29,50 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
-import { mockAppointments, mockDoctors } from '../../data/mockData';
+import { patientService } from '../../services/patientService';
+import { Appointment as AppointmentType } from '../../types/api';
 import toast from 'react-hot-toast';
-
-interface ExtendedAppointment {
-  id: string;
-  patientId: string;
-  doctorId: string;
-  date: string;
-  time: string;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
-  reason: string;
-  notes?: string;
-  prescription?: string;
-  createdAt: string;
-  doctor?: any;
-}
 
 const Appointments: React.FC = () => {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<string>('all');
-  const [selectedAppointment, setSelectedAppointment] = useState<ExtendedAppointment | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentType | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [appointments, setAppointments] = useState<AppointmentType[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Extended appointments with doctor info
-  const extendedAppointments: ExtendedAppointment[] = useMemo(() => {
-    return mockAppointments
-      .filter(apt => apt.patientId === user?.id)
-      .map(apt => ({
-        ...apt,
-        doctor: mockDoctors.find(doc => doc.id === apt.doctorId)
-      }));
-  }, [user?.id]);
+  // Fetch appointments on component mount
+  useEffect(() => {
+    fetchAppointments();
+  }, []);
+
+  const fetchAppointments = async () => {
+    try {
+      setLoading(true);
+      const response = await patientService.getAppointments();
+      setAppointments(response.appointments);
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+      toast.error('Failed to load appointments');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Filter appointments
   const filteredAppointments = useMemo(() => {
-    let filtered = extendedAppointments;
+    let filtered = appointments;
 
     // Search filter
     if (searchTerm) {
       filtered = filtered.filter(apt => 
-        apt.doctor?.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        apt.doctor?.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        apt.doctor?.specialization.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (apt.doctorId as any)?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (apt.doctorId as any)?.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (apt.doctorId as any)?.specialization?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         apt.reason.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
@@ -86,11 +84,9 @@ const Appointments: React.FC = () => {
 
     // Time filter
     if (timeFilter !== 'all') {
-      const now = new Date();
-      const appointmentDate = parseISO(apt.date);
-      
       filtered = filtered.filter(apt => {
         const aptDate = parseISO(apt.date);
+        const now = new Date();
         
         switch (timeFilter) {
           case 'today':
@@ -115,7 +111,7 @@ const Appointments: React.FC = () => {
       const dateB = new Date(`${b.date} ${b.time}`);
       return dateB.getTime() - dateA.getTime();
     });
-  }, [extendedAppointments, searchTerm, statusFilter, timeFilter]);
+  }, [appointments, searchTerm, statusFilter, timeFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -164,13 +160,14 @@ const Appointments: React.FC = () => {
     }
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await patientService.cancelAppointment(selectedAppointment._id, cancelReason);
       toast.success('Appointment cancelled successfully');
       setShowCancelModal(false);
       setCancelReason('');
       setSelectedAppointment(null);
+      fetchAppointments(); // Refresh the list
     } catch (error) {
+      console.error('Error cancelling appointment:', error);
       toast.error('Failed to cancel appointment');
     }
   };
@@ -181,12 +178,12 @@ const Appointments: React.FC = () => {
   };
 
   const stats = {
-    total: extendedAppointments.length,
-    upcoming: extendedAppointments.filter(apt => 
+    total: appointments.length,
+    upcoming: appointments.filter(apt => 
       isAfter(parseISO(apt.date), new Date()) || isToday(parseISO(apt.date))
     ).length,
-    completed: extendedAppointments.filter(apt => apt.status === 'completed').length,
-    cancelled: extendedAppointments.filter(apt => apt.status === 'cancelled').length
+    completed: appointments.filter(apt => apt.status === 'completed').length,
+    cancelled: appointments.filter(apt => apt.status === 'cancelled').length
   };
 
   return (
@@ -295,7 +292,12 @@ const Appointments: React.FC = () => {
         </Card>
 
         {/* Appointments List */}
-        {filteredAppointments.length > 0 ? (
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-600 dark:text-gray-400">Loading appointments...</span>
+          </div>
+        ) : filteredAppointments.length > 0 ? (
           <div className="space-y-6">
             {filteredAppointments.map((appointment, index) => (
               <motion.div
@@ -309,16 +311,16 @@ const Appointments: React.FC = () => {
                     {/* Doctor Info */}
                     <div className="flex items-center space-x-4 flex-1">
                       <img
-                        src={appointment.doctor?.avatar || `https://ui-avatars.com/api/?name=${appointment.doctor?.firstName}+${appointment.doctor?.lastName}&background=random`}
-                        alt={appointment.doctor?.firstName}
+                        src={(appointment.doctorId as any)?.profileImage || `https://ui-avatars.com/api/?name=${(appointment.doctorId as any)?.firstName}+${(appointment.doctorId as any)?.lastName}&background=random`}
+                        alt={(appointment.doctorId as any)?.firstName}
                         className="w-16 h-16 rounded-full object-cover"
                       />
                       <div className="flex-1">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                          {appointment.doctor?.firstName} {appointment.doctor?.lastName}
+                          {(appointment.doctorId as any)?.firstName} {(appointment.doctorId as any)?.lastName}
                         </h3>
                         <p className="text-blue-600 dark:text-blue-400 font-medium">
-                          {appointment.doctor?.specialization}
+                          {(appointment.doctorId as any)?.specialization || 'General Medicine'}
                         </p>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                           {appointment.reason}
@@ -405,7 +407,7 @@ const Appointments: React.FC = () => {
               </motion.div>
             ))}
           </div>
-        ) : (
+        ) : !loading && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
